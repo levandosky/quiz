@@ -23,6 +23,7 @@ let clicks = {}; // {username: timeTaken}
 let startTime = null; // Timer start time
 let szanse = {}; // {username: szanseValue}
 let userScores = {}; // {username: scoreValue}
+let usedQuestions = []; // Track used question indices
 
 // Load questions from JSON
 try {
@@ -68,6 +69,7 @@ io.on('connection', (socket) => {
   socket.emit('clicks', clicks);
   socket.emit('questions', questions);
   socket.emit('userScores', userScores);
+  socket.emit('usedQuestions', usedQuestions);
 
   // Send szanse value for this user if username is set in session
   if (socket.handshake.headers.cookie) {
@@ -83,9 +85,8 @@ io.on('connection', (socket) => {
   // Admin manually changes the question
   socket.on('admin_new_question', (question) => {
     currentQuestion = question;
-    // Only clear czas klikniecia, keep users
     Object.keys(clicks).forEach(username => {
-      clicks[username] = ""; // or "-" if you prefer
+      clicks[username] = ""; // Clear previous times
     });
     startTime = Date.now(); // Reset timer
     io.emit('question', currentQuestion);
@@ -95,26 +96,35 @@ io.on('connection', (socket) => {
   // Admin moves to the next question or selects a specific question
   socket.on('admin_next_question', (selectedIndex) => {
     if (selectedIndex !== undefined && questions[selectedIndex]) {
-      currentIndex = selectedIndex; // Update current index
+      currentIndex = selectedIndex;
     } else {
-      currentIndex = (currentIndex + 1) % questions.length; // Default to next question
+      currentIndex = (currentIndex + 1) % questions.length;
     }
     currentQuestion = questions[currentIndex];
-    // Only clear czas klikniecia, keep users
     Object.keys(clicks).forEach(username => {
-      clicks[username] = ""; // or "-" if you prefer
+      clicks[username] = ""; // Clear previous times
     });
     startTime = Date.now(); // Reset timer
+    // Mark question as used
+    if (!usedQuestions.includes(currentIndex)) {
+      usedQuestions.push(currentIndex);
+    }
     io.emit('question', currentQuestion);
     io.emit('clicks', clicks);
+    io.emit('usedQuestions', usedQuestions); // Notify admins
   });
 
   // User clicked
-  socket.on('user_click', ({ username }) => {
+  socket.on('user_click', ({ username, timeTaken }) => {
     socket.username = username;
-    if (!clicks[username]) {
-      clicks[username] = "-";
+    if (timeTaken !== undefined) {
+      clicks[username] = timeTaken; // Save time taken in seconds
       io.emit('clicks', clicks);
+    } else {
+      if (!clicks[username]) {
+        clicks[username] = "-";
+        io.emit('clicks', clicks);
+      }
     }
     if (userScores[username] === undefined) {
       userScores[username] = 0;
@@ -146,6 +156,16 @@ io.on('connection', (socket) => {
         s.emit('user_score', userScores[username]);
       }
     }
+  });
+
+  // Allow admin to reset used questions if needed
+  socket.on('admin_reset', () => {
+    Object.keys(clicks).forEach(username => {
+      clicks[username] = "";
+    });
+    usedQuestions = [];
+    io.emit('clicks', clicks);
+    io.emit('usedQuestions', usedQuestions);
   });
 
   socket.on('disconnect', () => {

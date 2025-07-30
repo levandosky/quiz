@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Admin</title>
+  <script src="/socket.io/socket.io.js"></script>
+  <style>
+    body {
+      height: 100vh;
+      background: linear-gradient(135deg, #ff5a00 0%, #ff7a1a 40%, #ff9f43 80%, #ffd36f 100%);
+      font-family: Arial, sans-serif;
+      color: #fff;
+      text-shadow: 0 2px 4px rgba(0,0,0,0.3);
+    }
+  </style>
+</head>
+<body>
+  <h1>Panel Admina</h1>
+
+  <h2>Aktualne pytanie:</h2>
+  <h3 id="question"></h3>
+
+  <button id="resetBtn">Reset kliknięć</button>
+
+  <h2>Lista pytań:</h2>
+  <form id="questionForm">
+    <ul id="questionList">
+      <!-- Questions will be dynamically populated -->
+    </ul>
+    <button type="button" id="chooseQuestionBtn">Wybierz pytanie</button>
+  </form>
+
+  <h2>Wyniki:</h2>
+  <table border="1">
+    <thead>
+      <tr>
+        <th>Użytkownik</th>
+        <th>Czas kliknięcia</th>
+        <th>Szanse</th>
+        <th>Punkty</th>
+      </tr>
+    </thead>
+    <tbody id="results"></tbody>
+  </table>
+
+  <script>
+    const socket = io();
+    const questionEl = document.getElementById('question');
+    const resultsEl = document.getElementById('results');
+    const resetBtn = document.getElementById('resetBtn');
+    const questionList = document.getElementById('questionList');
+    const chooseQuestionBtn = document.getElementById('chooseQuestionBtn');
+    let szanse = {};
+    let userScores = {};
+
+    // Listen for szanse updates
+    socket.on('szanse', (data) => {
+      szanse = data;
+      updateResults();
+    });
+
+    // Listen for userScores updates
+    socket.on('userScores', (data) => {
+      userScores = data;
+      updateResults();
+    });
+
+    // Update results table to include szanse and buttons
+    function updateResults() {
+      resultsEl.innerHTML = '';
+      for (let user in clicks) {
+        const szanseValue = szanse[user] !== undefined ? szanse[user] : 3;
+        const scoreValue = userScores[user] !== undefined ? userScores[user] : 0;
+        const row = `
+        <tr>
+          <td>${user}</td>
+          <td>${clicks[user]}</td>
+          <td>
+            <span id="szanse-${user}">${szanseValue}</span>
+            <button onclick="updateSzanse('${user}', 1)">+1</button>
+            <button onclick="updateSzanse('${user}', -1)">-1</button>
+          </td>
+          <td>
+            <span id="score-${user}">${scoreValue}</span>
+            <button onclick="updateScore('${user}', 1)">+1</button>
+            <button onclick="updateScore('${user}', 10)">+10</button>
+            <button onclick="updateScore('${user}', -1)">-1</button>
+            <button onclick="updateScore('${user}', -10)">-10</button>
+          </td>
+        </tr>`;
+        resultsEl.innerHTML += row;
+      }
+    }
+
+    // Receive the current question
+    socket.on('question', (q) => {
+      if (q === null) {
+        questionEl.textContent = "Czekamy na pytanie...";
+      } else {
+        questionEl.textContent = q;
+      }
+    });
+
+    // Listen for clicks and update table
+    socket.on('clicks', (clicksData) => {
+      clicks = clicksData;
+      updateResults();
+    });
+
+    // Function to emit szanse update
+    window.updateSzanse = function(username, delta) {
+      socket.emit('admin_update_szanse', { username, delta });
+    };
+
+    // Function to emit score update
+    window.updateScore = function(username, delta) {
+      socket.emit('admin_update_score', { username, delta });
+    };
+
+    // Populate list with questions
+    socket.on('questions', (questions) => {
+      questionList.innerHTML = '';
+      questions.forEach((q, index) => {
+        const listItem = `
+          <li>
+            <label>
+              <input type="radio" name="question" value="${index}">
+              ${q}
+            </label>
+          </li>`;
+        questionList.innerHTML += listItem;
+      });
+    });
+
+    // Handle question selection
+    chooseQuestionBtn.addEventListener('click', () => {
+      const selectedQuestion = document.querySelector('input[name="question"]:checked');
+      if (!selectedQuestion) {
+        return alert("Wybierz pytanie!");
+      }
+      const selectedIndex = parseInt(selectedQuestion.value);
+      socket.emit('admin_next_question', selectedIndex);
+    });
+
+    resetBtn.addEventListener('click', () => {
+      socket.emit('admin_reset');
+    });
+  </script>
+</body>
+</html>

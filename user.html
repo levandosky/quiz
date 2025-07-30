@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Użytkownik</title>
+  <script src="/socket.io/socket.io.js"></script>
+  <style>
+    body {
+      height: 100vh;
+      background: linear-gradient(135deg, #ff5a00 0%, #ff7a1a 40%, #ff9f43 80%, #ffd36f 100%);
+      text-align: center;
+      font-family: Arial, sans-serif;
+      color: #fff;
+      text-shadow: 0 2px 4px rgba(0,0,0,0.3);
+      overflow: hidden;
+    }
+  </style>
+</head>
+<body>
+  <h1 id="question"></h1>
+
+  <!-- User Name Section -->
+  <div id="userNameSection">
+    <input id="username" placeholder="Twoje imię">
+    <button id="setUserNameBtn">Zapisz</button>
+    <p id="userNameDisplay" style="display: none; font-size: small; position: fixed; bottom: 0; width: 100%;"></p>
+    <p id="userSzanseDisplay" style="display: none; font-size: small; position: fixed; bottom: 30px; width: 100%;"></p>
+    <p id="userScoreDisplay" style="display: block; font-size: small; position: fixed; bottom: 60px; width: 100%;"></p>
+  </div>
+
+  <script>
+    const socket = io();
+    const questionEl = document.getElementById('question');
+    const usernameInput = document.getElementById('username');
+    const setUserNameBtn = document.getElementById('setUserNameBtn');
+    const userNameDisplay = document.getElementById('userNameDisplay');
+    const userSzanseDisplay = document.getElementById('userSzanseDisplay');
+    const userScoreDisplay = document.createElement('p');
+    userScoreDisplay.id = 'userScoreDisplay';
+    userScoreDisplay.style.display = 'block';
+    userScoreDisplay.style.fontSize = 'small';
+    userScoreDisplay.style.position = 'fixed';
+    userScoreDisplay.style.bottom = '60px';
+    userScoreDisplay.style.width = '100%';
+    document.body.appendChild(userScoreDisplay);
+
+    let username = null;
+    let startTime = null; // Track when the question is set
+
+    // Check if username is already set
+    fetch('/get-username')
+      .then(response => response.json())
+      .then(data => {
+        if (data.username) {
+          username = data.username;
+          usernameInput.style.display = 'none';
+          setUserNameBtn.style.display = 'none';
+          userNameDisplay.style.display = 'block';
+          userNameDisplay.textContent = `${username}`;
+          socket.emit('user_click', { username, timeTaken: "-" }); // Emit event with username and timeTaken
+        }
+      })
+      .catch(() => {
+        usernameInput.style.display = 'block';
+        setUserNameBtn.style.display = 'block';
+        userNameDisplay.style.display = 'none';
+      });
+
+    // Set username
+    setUserNameBtn.addEventListener('click', () => {
+      const inputName = usernameInput.value.trim();
+      if (!inputName) {
+        return alert("Podaj swoje imię!");
+      }
+      fetch('/set-username', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: inputName })
+      })
+        .then(response => response.json())
+        .then(data => {
+          if (data.message) {
+            username = inputName;
+            usernameInput.style.display = 'none';
+            setUserNameBtn.style.display = 'none';
+            userNameDisplay.style.display = 'block';
+            userNameDisplay.textContent = `Imię: ${username}`;
+            socket.emit('user_click', { username, timeTaken: '' }); // Emit event with username and timeTaken
+          }
+        })
+        .catch(() => alert("Wystąpił błąd podczas zapisywania imienia."));
+    });
+
+    // Receive the current question and reset the timer
+    socket.on('question', (q) => {
+      questionEl.textContent = q;
+      startTime = Date.now(); // Reset timer when a new question is set
+    });
+
+    // Show default szanse value on load
+    userSzanseDisplay.style.display = 'block';
+    userSzanseDisplay.textContent = 'Szanse: 3';
+
+    // Listen for szanse value for this user
+    socket.on('user_szanse', (szanseValue) => {
+      userSzanseDisplay.style.display = 'block';
+      userSzanseDisplay.textContent = `Szanse: ${szanseValue}`;
+    });
+
+    // Show default score value on load
+    userScoreDisplay.textContent = 'Punkty: 0';
+
+    // Listen for score value for this user
+    socket.on('user_score', (scoreValue) => {
+      userScoreDisplay.textContent = `Punkty: ${scoreValue}`;
+    });
+
+    // Emit user_click on any screen touch
+    document.body.addEventListener('click', () => {
+      if (!username) {
+        return;
+      }
+      if (startTime) {
+        const timeTaken = ((Date.now() - startTime) / 1000).toFixed(2); // Calculate time in seconds
+        socket.emit('user_click', { username, timeTaken }); // Emit event with username and timeTaken
+      } else {
+        alert("Nie ustawiono pytania!");
+      }
+    });
+  </script>
+</body>
+</html>

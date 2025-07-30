@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Pytanie</title>
+  <script src="/socket.io/socket.io.js"></script>
+</head>
+<body>
+  <h1 id="question">Ładowanie pytania...</h1>
+
+  <script>
+    const socket = io();
+    const questionEl = document.getElementById('question');
+    socket.on('question', (q) => {
+      questionEl.textContent = q;
+    });
+  </script>
+</body>
+</html>

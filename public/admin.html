@@ -12,6 +12,10 @@
       color: #fff;
       text-shadow: 0 2px 4px rgba(0,0,0,0.3);
     }
+    .selected-question {
+      text-decoration: line-through;
+      color: #bbb;
+    }
   </style>
 </head>
 <body>
@@ -52,6 +56,9 @@
     const chooseQuestionBtn = document.getElementById('chooseQuestionBtn');
     let szanse = {};
     let userScores = {};
+    let clicks = {};
+    let selectedQuestionIndex = null;
+    let usedQuestions = []; // Track used question indices
 
     // Listen for szanse updates
     socket.on('szanse', (data) => {
@@ -71,10 +78,11 @@
       for (let user in clicks) {
         const szanseValue = szanse[user] !== undefined ? szanse[user] : 3;
         const scoreValue = userScores[user] !== undefined ? userScores[user] : 0;
+        const czasKlikniecia = clicks[user] !== undefined ? clicks[user] : "-";
         const row = `
         <tr>
           <td>${user}</td>
-          <td>${clicks[user]}</td>
+          <td>${czasKlikniecia === "" ? "-" : czasKlikniecia + " s"}</td>
           <td>
             <span id="szanse-${user}">${szanseValue}</span>
             <button onclick="updateSzanse('${user}', 1)">+1</button>
@@ -92,13 +100,82 @@
       }
     }
 
-    // Receive the current question
+    // Listen for usedQuestions updates
+    socket.on('usedQuestions', (used) => {
+      usedQuestions = used;
+      renderQuestionList(window.questions || []);
+    });
+
+    // Helper to render question list with strikethrough for used questions
+    function renderQuestionList(questions) {
+      questionList.innerHTML = '';
+      questions.forEach((q, index) => {
+        const isSelected = selectedQuestionIndex === index;
+        const isUsed = usedQuestions.includes(index);
+        const spanClass = isUsed ? "selected-question" : "";
+        const checked = isSelected ? "checked" : "";
+        const listItem = `
+          <li>
+            <label>
+              <input type="radio" name="question" value="${index}" ${checked}>
+              <span class="${spanClass}">${q}</span>
+            </label>
+          </li>`;
+        questionList.innerHTML += listItem;
+      });
+    }
+
+    // Populate list with questions
+    socket.on('questions', (questions) => {
+      window.questions = questions;
+      renderQuestionList(questions);
+    });
+
+    // Handle question selection
+    chooseQuestionBtn.addEventListener('click', () => {
+      const selectedQuestion = document.querySelector('input[name="question"]:checked');
+      if (!selectedQuestion) {
+        return alert("Wybierz pytanie!");
+      }
+      const selectedIndex = parseInt(selectedQuestion.value);
+      selectedQuestionIndex = selectedIndex;
+      socket.emit('admin_next_question', selectedIndex);
+    });
+
+    // Listen for question change and update selected index
     socket.on('question', (q) => {
       if (q === null) {
         questionEl.textContent = "Czekamy na pytanie...";
       } else {
         questionEl.textContent = q;
+        // Find index of current question
+        if (window.questions) {
+          selectedQuestionIndex = window.questions.findIndex(qq => qq === q);
+          renderQuestionList(window.questions);
+        }
       }
+    });
+
+    // Listen for questions and update global reference
+    socket.on('questions', (questions) => {
+      window.questions = questions;
+      // Find selected index by matching current question
+      if (questionEl.textContent && questionEl.textContent !== "Czekamy na pytanie...") {
+        selectedQuestionIndex = questions.findIndex(q => q === questionEl.textContent);
+      }
+      // Re-render question list
+      questionList.innerHTML = '';
+      questions.forEach((q, index) => {
+        const isSelected = selectedQuestionIndex === index;
+        const listItem = `
+          <li>
+            <label>
+              <input type="radio" name="question" value="${index}" ${isSelected ? "checked" : ""}>
+              <span class="${isSelected ? "selected-question" : ""}">${q}</span>
+            </label>
+          </li>`;
+        questionList.innerHTML += listItem;
+      });
     });
 
     // Listen for clicks and update table
@@ -116,31 +193,6 @@
     window.updateScore = function(username, delta) {
       socket.emit('admin_update_score', { username, delta });
     };
-
-    // Populate list with questions
-    socket.on('questions', (questions) => {
-      questionList.innerHTML = '';
-      questions.forEach((q, index) => {
-        const listItem = `
-          <li>
-            <label>
-              <input type="radio" name="question" value="${index}">
-              ${q}
-            </label>
-          </li>`;
-        questionList.innerHTML += listItem;
-      });
-    });
-
-    // Handle question selection
-    chooseQuestionBtn.addEventListener('click', () => {
-      const selectedQuestion = document.querySelector('input[name="question"]:checked');
-      if (!selectedQuestion) {
-        return alert("Wybierz pytanie!");
-      }
-      const selectedIndex = parseInt(selectedQuestion.value);
-      socket.emit('admin_next_question', selectedIndex);
-    });
 
     resetBtn.addEventListener('click', () => {
       socket.emit('admin_reset');
